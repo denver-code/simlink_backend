@@ -475,14 +475,20 @@ class DevicePerspectiveMonitor:
 
     def is_packet_visible(self, packet_data: dict, path: List[str]) -> bool:
         """Determine if packet is visible from monitoring device's perspective"""
+        # Extract device IDs from full interface names or IPs
         src_device = packet_data["src_ip"].split(".")[0]
         dest_device = packet_data["dest_ip"].split(".")[0]
+
+        # Debug print
+        print(
+            f"Debug - Checking visibility: src={src_device}, dest={dest_device}, monitor={self.monitor_device_id}"
+        )
 
         # If monitoring a switch, we see all packets that traverse it
         if "switch" in self.monitor_device_id:
             return self.monitor_device_id in path
 
-        # If monitoring an end device, we only see packets to/from it
+        # If monitoring an end device, we see packets to/from it
         return (
             self.monitor_device_id == src_device
             or self.monitor_device_id == dest_device
@@ -491,12 +497,10 @@ class DevicePerspectiveMonitor:
     def format_packet(self, packet_data: dict, packet_type: str) -> str:
         """Format packet information based on type and perspective"""
         timestamp = time.time() - self.start_time
-        direction = (
-            "Outgoing"
-            if packet_data["src_ip"].startswith(self.monitor_device_id)
-            else "Incoming"
-        )
 
+        # Determine packet direction
+        is_source = packet_data["src_ip"].startswith(self.monitor_device_id)
+        direction = "Outgoing" if is_source else "Incoming"
         if "switch" in self.monitor_device_id:
             direction = "Forward"
 
@@ -506,37 +510,74 @@ class DevicePerspectiveMonitor:
             f"  Layer 3: {packet_data['src_ip']} -> {packet_data['dest_ip']}"
         )
 
+    def monitor_ping_from_perspective(self, ping_result: dict):
+        event_details = ping_result["details"]
+        path = event_details.get("path_taken", [])
+
+        # Print initial monitoring information
+        print(f"\n=== Traffic captured on {self.monitor_device_id} ===")
+        if self.monitor_interface:
+            print(f"Interface: {self.monitor_interface}")
+        print(
+            f"Capturing packets relevant to ping from {event_details['source']} to {event_details['destination_ip']}"
+        )
+        time.sleep(0.5)
+
+        # Show ARP resolution
+        self.print_arp_from_perspective(
+            {
+                "source_ip": event_details["source"].split(".")[0],
+                "source_mac": event_details["icmp_packets"][0]["echo_request"][
+                    "src_mac"
+                ],
+                "target_ip": event_details["destination_ip"],
+                "target_mac": event_details["icmp_packets"][0]["echo_request"][
+                    "dest_mac"
+                ],
+            },
+            path,
+        )
+        time.sleep(0.5)
+
+        # Process ICMP packets
+        for packet in event_details["icmp_packets"]:
+            seq_num = packet["sequence"]
+            time.sleep(0.5)  # Delay between packets
+
+            # Echo Request
+            echo_req = packet["echo_request"]
+            print(f"\nICMP Echo Request (seq={seq_num})")
+            print(self.format_packet(echo_req, "ICMP Echo Request"))
+            print(f"  TTL: {echo_req.get('ttl', 64)}")
+            self.simulate_delay(path)
+
+            # Echo Reply (if successful)
+            if packet["success"]:
+                echo_reply = packet["echo_reply"]
+                print(f"\nICMP Echo Reply (seq={seq_num})")
+                print(self.format_packet(echo_reply, "ICMP Echo Reply"))
+                print(f"  TTL: {echo_reply.get('ttl', 64)}")
+
+                # Show RTT only for the monitoring device if it's the source
+                if self.monitor_device_id == event_details["source"].split(".")[0]:
+                    print(f"  Round Trip Time: {packet['rtt']:.3f}ms")
+
+                self.simulate_delay(path)
+
     def print_arp_from_perspective(self, arp_data: dict, path: List[str]):
         timestamp = time.time() - self.start_time
 
-        # Only print if device is involved in ARP
-        if self.monitor_device_id in [
-            arp_data["source_ip"].split(".")[0],
-            arp_data["target_ip"].split(".")[0],
-        ] or ("switch" in self.monitor_device_id and self.monitor_device_id in path):
+        print(f"\n{self.monitor_device_id} observed ARP traffic:")
 
-            print(f"\n{self.monitor_device_id} observed ARP traffic:")
-
-            if "switch" in self.monitor_device_id:
-                print(f"[{timestamp:.6f}s] Forward ARP Request")
-            elif self.monitor_device_id == arp_data["source_ip"].split(".")[0]:
-                print(f"[{timestamp:.6f}s] Sent ARP Request")
-            else:
-                print(f"[{timestamp:.6f}s] Received ARP Request")
-
+        if self.monitor_device_id == arp_data["source_ip"]:
+            print(f"[{timestamp:.6f}s] Sent ARP Request")
             print(f"  Who has {arp_data['target_ip']}? Tell {arp_data['source_ip']}")
 
-            # Simulate network delays
-            self.simulate_delay(path)
-            timestamp = time.time() - self.start_time
+        self.simulate_delay(path)
+        timestamp = time.time() - self.start_time
 
-            if "switch" in self.monitor_device_id:
-                print(f"[{timestamp:.6f}s] Forward ARP Reply")
-            elif self.monitor_device_id == arp_data["target_ip"].split(".")[0]:
-                print(f"[{timestamp:.6f}s] Sent ARP Reply")
-            else:
-                print(f"[{timestamp:.6f}s] Received ARP Reply")
-
+        if self.monitor_device_id == arp_data["source_ip"]:
+            print(f"[{timestamp:.6f}s] Received ARP Reply")
             print(f"  {arp_data['target_ip']} is at {arp_data['target_mac']}")
 
     def simulate_delay(self, path: List[str]):
@@ -546,66 +587,6 @@ class DevicePerspectiveMonitor:
                 time.sleep(self.switch_latency)
             time.sleep(self.propagation_delay)
         time.sleep(self.processing_delay)
-
-    def monitor_ping_from_perspective(self, ping_result: dict):
-        event_details = ping_result["details"]
-        path = event_details.get("path_taken", [])
-
-        # Only show header if device is involved
-        if self.monitor_device_id in path:
-            print(f"\n=== Traffic captured on {self.monitor_device_id} ===")
-            if self.monitor_interface:
-                print(f"Interface: {self.monitor_interface}")
-            print(
-                f"Capturing packets relevant to ping from {event_details['source']} to {event_details['destination_ip']}"
-            )
-            time.sleep(0.5)
-
-            # Show ARP resolution from perspective
-            if self.monitor_device_id in path:
-                self.print_arp_from_perspective(
-                    {
-                        "source_ip": event_details["source"].split(".")[0],
-                        "source_mac": event_details["icmp_packets"][0]["echo_request"][
-                            "src_mac"
-                        ],
-                        "target_ip": event_details["destination_ip"],
-                        "target_mac": event_details["icmp_packets"][0]["echo_request"][
-                            "dest_mac"
-                        ],
-                    },
-                    path,
-                )
-                time.sleep(0.5)
-
-            # Process each ICMP packet
-            for packet in event_details["icmp_packets"]:
-                time.sleep(1.0)  # Delay between sequences
-
-                # Echo Request
-                if self.is_packet_visible(packet["echo_request"], path):
-                    print(
-                        f"\n{self.format_packet(packet['echo_request'], 'ICMP Echo Request')}"
-                    )
-                    if packet["echo_request"].get("ttl"):
-                        print(f"  TTL: {packet['echo_request']['ttl']}")
-
-                    self.simulate_delay(path)
-
-                # Echo Reply (if successful)
-                if packet["success"] and self.is_packet_visible(
-                    packet["echo_reply"], path
-                ):
-                    print(
-                        f"{self.format_packet(packet['echo_reply'], 'ICMP Echo Reply')}"
-                    )
-                    if packet["echo_reply"].get("ttl"):
-                        print(f"  TTL: {packet['echo_reply']['ttl']}")
-
-                    if self.monitor_device_id == event_details["source"].split(".")[0]:
-                        print(f"  Round Trip Time: {packet['rtt']:.3f}ms")
-
-                    self.simulate_delay(path)
 
 
 def monitor_from_device_perspective(
@@ -629,10 +610,6 @@ simulation_results = simulate_network_events(devices, connections, events)
 # Monitor from PC1's perspective
 print("\nMonitoring from PC1's perspective:")
 monitor_from_device_perspective(simulation_results, "pc1", "eth0")
-
-# Monitor from PC2's perspective
-print("\nMonitoring from PC2's perspective:")
-monitor_from_device_perspective(simulation_results, "pc2", "eth0")
 
 # if __name__ == "__main__":
 #     results = simulate_network_events(devices, connections, events)
