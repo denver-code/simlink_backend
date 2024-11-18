@@ -1,0 +1,97 @@
+{
+  "nodes": [
+    {
+      "id": "pc1",
+      "type": "PC",
+      "name": "Workstation_PC",
+      "hardware": {
+        "network_card": {
+          "name": "Realtek PCIe GBE",
+          "mac": "00:1A:2B:3C:4D:5E",
+          "speed": "1Gbps"
+        }
+      },
+      "interfaces": [
+        {
+          "id": "if_eth0",
+          "name": "eth0",
+          "type": "Ethernet",
+          "mac": "00:1A:2B:3C:4D:5E",
+          "ip": "192.168.1.100",
+          "subnet_mask": "255.255.255.0",
+          "gateway": "192.168.1.1",
+          "dns": ["8.8.8.8", "8.8.4.4"],
+          "status": "up"
+        }
+      ]
+    },
+
+    {
+      "id": "pc2",
+      "type": "PC",
+      "name": "Workstation_PC",
+      "hardware": {
+        "network_card": {
+          "name": "Realtek PCIe GBE",
+          "mac": "00:1A:2B:3C:4D:5E",
+          "speed": "1Gbps"
+        }
+      },
+      "interfaces": [
+        {
+          "id": "if_eth0",
+          "name": "eth0",
+          "type": "Ethernet",
+          "mac": "00:1A:2B:3C:4D:5E",
+          "ip": "192.168.1.100",
+          "subnet_mask": "255.255.255.0",
+          "gateway": "192.168.1.1",
+          "dns": ["8.8.8.8", "8.8.4.4"],
+          "status": "up"
+        }
+      ]
+    },
+
+    {
+      "id": "switch1",
+      "type": "Switch",
+      "name": "Office_Switch",
+      "hardware": {
+        "network_card": {
+          "name": "Realtek PCIe GBE",
+          "mac": "00:1A:2B:3C:4D:5E",
+          "speed": "1Gbps"
+        }
+      },
+      "interfaces": [
+        {
+          "id": "if_port1",
+          "name": "port1",
+          "type": "Ethernet",
+          "status": "up",
+          "connected_to": "pc1.eth0"
+        },
+        {
+          "id": "if_port2",
+          "name": "port2",
+          "type": "Ethernet",
+          "status": "down",
+          "connected_to": null
+        },
+        {
+          "id": "if_port3",
+          "name": "port3",
+          "type": "Ethernet",
+          "status": "down",
+          "connected_to": null
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from_interface": "pc1.eth0",
+      "to_interface": "switch1.port1"
+    }
+  ]
+}
